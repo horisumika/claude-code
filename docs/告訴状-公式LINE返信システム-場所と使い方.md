@@ -1,0 +1,184 @@
+# 告訴状まわりの「公式LINE返信システム」— 場所・使い方・復旧手順
+
+「告訴状に関する公式LINEの返信システムを探して、使えるようにしてほしい」というご依頼への回答です。
+
+---
+
+## 1. 結論：どこにあるか
+
+**このクラウドセッション（claude.ai/code 側）のディスクには入っていません。**
+中身は空ではなく、実際に探した結果は次のとおりです。
+
+| 探した場所 | 結果 |
+|---|---|
+| このセッションのファイル全体 | 該当なし（このリポジトリ＝指示書だけ） |
+| GitHub（`horisumika/claude-code` / `horisumika/hori-office-system-clean`） | 返信システム本体は無し。**つながる側のコード**だけ有り |
+| Dropbox（「告訴状」「line-reply-admin」で全文検索） | 学習素材のPDFのみ。ソースコードは無し |
+
+本体は **お使いの Mac の `~/Desktop/LINE`** にあります。
+これは `hori-office-system-clean` の `CLAUDE.md` に明記されている、事務所の正式な置き場所です。
+
+| システム | Mac 上の場所 | 役割 | 本番URL |
+|---|---|---|---|
+| **line-reply-admin** | `~/Desktop/LINE` | **対顧客**。公式LINEの返信下書き・告訴状の作成・請求 | line-reply-admin.vercel.app |
+| hori-office-system | `~/projects/hori-office-system` | 対内部。補助者/スタッフ管理、LINE WORKS Bot の窓口、警察折り返し | hori-office-system.vercel.app |
+
+事務所全体の資産の地図は `~/Desktop/LINE/docs/claude-setup/BUSINESS_ASSET_MAP.md` にあります。
+
+> なお、このクラウド環境からは `*.vercel.app` への通信がネットワークポリシーで遮断されているため、
+> 「今この瞬間サイトが生きているか」までは、こちらからは確認できませんでした。
+
+---
+
+## 2. 2つのシステムはどうつながっているか
+
+公式LINEの返信は、**line-reply-admin が下書きを作り → LINE WORKS のトークで保利さんが承認 → 実際に依頼者へ送信**という流れです。
+
+```
+  依頼者の公式LINE
+        │
+        ▼
+  line-reply-admin（~/Desktop/LINE）           hori-office-system
+  ・返信下書きをAIで作成                        ・LINE WORKS Bot の窓口
+  ・告訴状の作成 / 請求                          ・承認コマンドの受付
+        │                                              ▲
+        │ POST /api/bridge/reply-approval-request      │
+        └──────────────────────────────────────────────┘
+                     ↑ 共有の CROSS_SYSTEM_TOKEN で認証
+        ┌──────────────────────────────────────────────┐
+        │ 承認結果を返す                                │
+        ▼                                              │
+  /api/bridge/reply-pending   ← 承認待ち一覧            │
+  /api/bridge/reply-approve   ← 承認 / 却下 / 修正      │
+  /api/bridge/draft-approve   ← 依頼者確認LINEの送信    │
+  /api/bridge/tracking        ← レターパック追跡番号    │
+```
+
+承認依頼の DM を送る Bot と、承認コマンドを受け取る Bot は**同じ Bot** なので、
+届いたトークにそのまま返信すれば操作できます。
+
+---
+
+## 3. 「使う」だけなら、まずここ
+
+### A. LINE WORKS のトークで打つコマンド（保利さん＝APPROVER 専用）
+
+承認依頼の DM が届いたら、**そのトークに次を送るだけ**です。
+
+| 打つ言葉 | 何が起きるか |
+|---|---|
+| `返信一覧` | 承認待ちの返信下書きを一覧表示（`返信下書き一覧` でも可） |
+| `返信承認 <コード>` | その下書きをそのまま依頼者の公式LINEへ送信 |
+| `返信却下 <コード>` | 送信せず保留（on_hold）に戻す |
+| `返信修正 <コード> 新しい本文` | 本文を差し替えて送信（コードの後で改行して本文を書いてOK） |
+| `承認 <requestId>` | 依頼者確認LINEの下書きを承認して送信 |
+
+- `<コード>` は下書きIDの末尾6文字です。承認依頼のDMに書かれています。
+- **この4つは承認者（保利さん）のロールでしか動きません。** 他の人が打つと弾かれます。
+- 警察の折り返し記録は別系統で、`電話` / `警察` / `受電` / `折り返し` と送るとテンプレが返ってきます。
+
+### B. 管理画面
+
+| 画面 | URL |
+|---|---|
+| 告訴状の作成・テンプレ・警察タスク・ステータス管理 | line-reply-admin.vercel.app/admin/complaints |
+| 補助者・スタッフ管理、警察折り返し | hori-office-system.vercel.app/admin |
+
+---
+
+## 4. 「動かない」ときに見る順番
+
+公式LINEの返信が止まるときは、だいたい次のどれかです。上から順に確認してください。
+
+1. **環境変数（いちばん多い原因）**
+   - `CROSS_SYSTEM_TOKEN` — **両方のシステムで同じ値**である必要があります。片方だけ変えると 401 で黙って止まります（16文字未満でも 500 になります）。
+   - `LINE_SYSTEM_URL` — hori-office-system 側から見た line-reply-admin の URL。未設定なら `https://line-reply-admin.vercel.app` が使われます。
+   - `LINEWORKS_BOT_ID` / `LINEWORKS_BOT_SECRET` — Bot が動かなくなります。
+   - `CRON_SECRET` — 未設定だと**定期実行が全部 500 で静かに止まります**。
+   - ⚠️ **環境変数を足しただけでは反映されません。必ず再デプロイが必要です。**
+
+2. **承認者の LINE WORKS アカウント紐付け**
+   承認依頼の DM は `role = APPROVER` かつ `lineWorksAccountId` が入っているユーザーにしか飛びません。ここが空だと「送ったのに届かない」状態になります。
+
+3. **Bot の webhook**
+   hori-office-system 側の `/api/webhook/lineworks` が Bot の唯一の入口です。ここが 401/500 を返していないか、Vercel のログで確認します。
+
+4. **line-reply-admin 側のブリッジAPI**
+   `/api/bridge/reply-pending` が 200 を返すか。返さなければ、送信元ではなく line-reply-admin 側の問題です。
+
+---
+
+## 5. Mac 側の Claude Code に貼るプロンプト
+
+実物のコードは Mac にあるので、実際の調査・復旧はそちらに任せるのが最短です。
+Mac でいつも使っている Claude Code に、下の「===」の中をまるごとコピーして貼り付けてください。
+
+```
+=======================================================================
+告訴状まわりの「公式LINEの返信システム」を、いま使える状態かどうか点検して、
+止まっているところがあれば直してほしい。
+
+【対象】
+- 本体: ~/Desktop/LINE （Vercel プロジェクト: line-reply-admin /
+  本番 https://line-reply-admin.vercel.app）
+- 姉妹システム: ~/projects/hori-office-system
+  （Vercel プロジェクト: hori-office-system）
+- 事務所の資産マップ: ~/Desktop/LINE/docs/claude-setup/BUSINESS_ASSET_MAP.md
+  最初にこれと ~/Desktop/LINE の CLAUDE.md / AGENTS.md を読んでから動くこと。
+
+【やってほしいこと（この順番で）】
+1. ~/Desktop/LINE が実在するか、git の状態（未コミットの変更・ブランチ）を確認して報告する。
+2. 以下のブリッジAPIが line-reply-admin 側に実装されているか、ファイルを開いて確認する。
+   - GET  /api/bridge/reply-pending    … 承認待ち一覧
+   - POST /api/bridge/reply-approve    … 承認 / 却下 / 修正
+   - POST /api/bridge/draft-request    … 依頼者確認LINEの下書き作成
+   - POST /api/bridge/draft-approve    … 承認済み下書きの送信
+   - POST /api/bridge/tracking         … 追跡番号の受信
+3. 環境変数の「キー名」だけを両システムで突き合わせる（値は表示しないこと）。
+   特に CROSS_SYSTEM_TOKEN が両方に存在し、同一かどうか。
+   ローカルの .env.local と Vercel 本番（vercel env ls）の両方を見る。
+   ※ トークンの中身を画面に出したり、ファイルやコミットに書いたりは絶対にしない。
+4. ローカルで `npm run build` を通し、型エラー・ビルドエラーが無いことを確認する。
+5. `npm run dev` で起動して、次を確認する。
+   - /admin/complaints が表示されるか
+   - GET /api/bridge/reply-pending が 200 を返すか
+     （Authorization: Bearer $CROSS_SYSTEM_TOKEN を付けて curl。値は伏せて実行）
+6. 本番側の疎通も確認する。
+   https://line-reply-admin.vercel.app/api/bridge/reply-pending が
+   200（正しいトークン）と 401（トークン無し）を返し分けるか。
+7. LINE 公式アカウント側の webhook 設定が、いまのデプロイURLを向いているか確認する。
+8. 直近のエラーを Vercel のログで確認する（line-reply-admin と hori-office-system の両方）。
+
+【直してよい範囲】
+- 環境変数の不足・不一致、webhook URL のズレ、ビルドエラーの修正まではやってよい。
+- ただし本番デプロイ、DBスキーマの変更、依頼者へのLINE実送信は、
+  必ず内容を説明して承認を得てから実行すること。
+
+【安全面】
+- 依頼者の実名・トークン・パスワードを、ドキュメントやコミットメッセージに書かない。
+- LINE WORKS Bot / 公式LINE への実送信を、確認なしに走らせない。
+
+【最後に】
+どこが動いていて、どこが止まっていたか、直したのは何かを日本語で短くまとめて報告して。
+=======================================================================
+```
+
+---
+
+## 6. クラウド側（この画面）でも直接いじれるようにしたい場合
+
+いまは `~/Desktop/LINE` に git リモートが無いため、Mac の外からは触れません。
+このセッションから直接コードを読み書きできるようにしたい場合は、Mac 側の Claude Code に
+
+> `~/Desktop/LINE` を GitHub の **プライベート** リポジトリとして作成して push して。
+> `.env` `.env.local` などの秘密情報は `.gitignore` に入っていることを確認してから実行して。
+
+と伝えてください。push が済めば、こちらの画面からも同じコードを調査・改修できるようになります。
+
+---
+
+## 7. 安全上の注意
+
+- このリポジトリには、トークン・パスワード・依頼者の個人情報は一切含めていません。
+- 上のプロンプトも、値そのものを画面やコミットに出さない前提で書いてあります。
+- 公式LINEの返信は**実際に依頼者へ届きます**。動作確認のつもりで送信コマンドを打たないでください。
