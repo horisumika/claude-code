@@ -10,6 +10,7 @@ M2・8GB の Mac で回せるように **画像は Gemini、動画は HeyGen** �
 | `products/today.md` | 今日の1本の台本・投稿文・表示設定 |
 | `scripts/make_reference_image.py` | 基準画像を Gemini で1枚生成 |
 | `scripts/heygen_video.py` | 基準画像を HeyGen でしゃべらせる |
+| `scripts/rakuten_links.py` | 今日の商品を楽天APIで探し、送料込み1,000円以下の候補とアフィリエイトリンクを作る |
 
 ## Mac での使い方
 
@@ -20,6 +21,11 @@ cp -R ai-influencer ~/ai-influencer && cd ~/ai-influencer
 export GEMINI_API_KEY=...
 python3 scripts/make_reference_image.py --out assets/reference_face.png
 #   → 目で確認して採用。character.md に版と日付を書く
+
+# 0. 商品とリンク（楽天）
+export RAKUTEN_APP_ID=... RAKUTEN_AFFILIATE_ID=...
+python3 scripts/rakuten_links.py --out output/links-01.md
+#   → 各キーワード上位3件の価格・レビュー・リンク。1件ずつ選んで products/today.md に書く
 
 # 2. しゃべる動画（HeyGen）
 export HEYGEN_API_KEY=...
